@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Minha Feira 360</title>
+<style>
+:root{--bg:#eef4ff;--card:#fff;--tx:#0b2545;--mu:#5b6b85;--pr:#1565d8;--pt:#fff;--bd:#d3e0f5;--ok:#0a8f4e;--er:#c62828;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a1424;--card:#13233b;--tx:#e8f0fe;--mu:#9fb2d0;--pr:#4b8dff;--pt:#fff;--bd:#25395a;--ok:#3ddc84;--er:#ff7b7b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0a1424;--card:#13233b;--tx:#e8f0fe;--mu:#9fb2d0;--pr:#4b8dff;--pt:#fff;--bd:#25395a;--ok:#3ddc84;--er:#ff7b7b;color-scheme:dark}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:26px;margin:8px 0 4px}h2{font-size:20px;margin:0 0 12px}
+.sub{color:var(--mu);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:14px}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:18px;margin-bottom:12px;font-size:17px;font-weight:700;background:var(--pr);color:var(--pt);cursor:pointer}
+.btn.sec{background:var(--card);color:var(--pr);border:2px solid var(--pr)}
+.btn.ok{background:var(--ok);color:#fff}.btn.er{background:var(--er);color:#fff}
+.btn.sm{display:inline-block;width:auto;padding:8px 14px;margin:0;font-size:14px}
+.total{font-size:42px;font-weight:800;color:var(--pr);line-height:1.1}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.top{background:var(--pr);color:#fff;border-radius:16px;padding:16px;margin-bottom:14px}
+.top .total{color:#fff}.top small{opacity:.85}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input{width:100%;padding:14px;border:1px solid var(--bd);border-radius:12px;font-size:16px;background:var(--bg);color:var(--tx)}
+.item{border-bottom:1px solid var(--bd);padding:10px 0}.item:last-child{border:0}
+.mu{color:var(--mu);font-size:14px}.qty button{width:34px;height:34px;border-radius:50%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:18px}
+.modal{position:fixed;inset:0;background:rgba(5,15,35,.6);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+.sheet{background:var(--card);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px;max-height:92dvh;overflow:auto}
+#reader{width:100%;min-height:240px;border-radius:12px;overflow:hidden;background:#000}
+.back{background:none;border:0;color:var(--pr);font-weight:700;font-size:16px;padding:8px 0;cursor:pointer}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0;white-space:nowrap}.chip{border:1px solid var(--pr);background:var(--card);color:var(--pr);border-radius:20px;padding:8px 12px;font-size:14px;cursor:pointer}.chip.on{background:var(--pr);color:var(--pt)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.g2 .card{margin:0}.g2 .total{font-size:24px}.bar{background:var(--bg);border-radius:8px;height:12px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pr)}
+select{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12px;font-size:16px;background:var(--bg);color:var(--tx)}
+</style></head><body><div id="app"></div><div id="m"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+let S={supers:[],products:{},fairs:[],lists:[],budget:{},cfg:{},cats:['Alimentos','Bebidas','Carnes','Frutas','Verduras','Higiene','Limpeza','Laticínios','Outros']},view='home',vid=null,scanner=null;
+try{const r=localStorage.getItem('mf360');if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
+const save=()=>{try{localStorage.setItem('mf360',JSON.stringify(S));return true}catch(e){return false}};
+Object.values(S.products).forEach(p=>{if(p.last==null&&p.price!=null){p.last=p.price;delete p.price}});
+const $=s=>document.querySelector(s);
+const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const R=v=>(+v||0).toLocaleString('pt-BR',S.cfg&&S.cfg.nosym?{minimumFractionDigits:2,maximumFractionDigits:2}:{style:'currency',currency:'BRL'});
+const tot=f=>f.items.reduce((a,i)=>a+i.price*i.qty,0);
+const cur=()=>S.fairs.find(f=>f.status==='andamento');
+const last=()=>[...S.fairs].reverse().find(f=>f.status==='finalizada');
+const dt=d=>d.split('-').reverse().join('/');
+const now=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return{d:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),t:p(d.getHours())+':'+p(d.getMinutes())}};
+const go=(v,id)=>{view=v;vid=id||null;render()};
+function render(){
+ const a=$('#app'),c=cur(),l=last();
+ if(view==='home'){
+  a.innerHTML=`<h1>🛒 Minha Feira 360</h1><p class="sub">${S.cfg.name?'Olá, '+esc(S.cfg.name)+'! ':''}Controle suas compras de supermercado</p>
+  ${c?`<div class="card"><div class="mu">Feira em andamento · ${esc(c.market)}</div><div class="total">${R(tot(c))}</div></div>`:''}
+  <button class="btn" onclick="go('new')">INICIAR NOVA FEIRA</button>
+  ${c?`<button class="btn ok" onclick="go('shop')">CONTINUAR FEIRA</button>`:''}
+  <button class="btn sec" onclick="go('hist')">HISTÓRICO DE FEIRAS</button>
+  <button class="btn sec" onclick="go('lists')">LISTA DE COMPRAS</button>
+  <button class="btn sec" onclick="go('cmp')">COMPARAR PREÇOS</button>
+  <button class="btn sec" onclick="go('rel')">RELATÓRIOS</button>
+  <button class="btn sec" onclick="go('gastos')">MEUS GASTOS</button>
+  <button class="btn sec" onclick="go('prods')">MEUS PRODUTOS</button>
+  <button class="btn sec" onclick="go('cfg')">⚙️ CONFIGURAÇÕES</button>
+  ${orcCard()}<div class="card"><h2>Última feira finalizada</h2>${l?`<div><b>${esc(l.market)}</b></div><div class="mu">${dt(l.date)} · ${l.items.length} lançamentos</div><div class="total" style="font-size:28px">${R(tot(l))}</div>`:'<div class="mu">Nenhuma feira finalizada ainda.</div>'}</div>`;
+ }
+ else if(view==='new'){
+  const n=now();
+  if(c){a.innerHTML=`<button class="back" onclick="go('home')">← Voltar</button><div class="card"><h2>Já existe uma feira em andamento</h2><p>${esc(c.market)} · ${R(tot(c))}</p><button class="btn ok" onclick="go('shop')">CONTINUAR FEIRA EXISTENTE</button></div>`;return}
+  a.innerHTML=`<button class="back" onclick="go('home')">← Voltar</button><div class="card"><h2>Nova feira</h2>
+  <label>Supermercado</label><input id="mk" list="sl" placeholder="Selecione ou digite um novo"><datalist id="sl">${S.supers.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+  <label>Data</label><input id="dd" type="date" value="${n.d}"><label>Hora de início</label><input id="hh" type="time" value="${n.t}">
+  <label>Lista de compras</label><select id="ls"><option value="">Começar sem lista</option>${S.lists.filter(l=>l.status==='ativa'&&!l.fairId).map(l=>`<option value="${l.id}">${esc(l.name)} (${l.items.length} itens)</option>`).join('')}</select>
+  <button class="btn" style="margin-top:16px" onclick="startFair()">CONFIRMAR E COMEÇAR</button></div>`;
+ }
+ else if(view==='shop'){
+  if(!c)return go('home');
+  a.innerHTML=`<div class="top"><div class="row"><b>${esc(c.market)}</b><button class="btn sm sec" onclick="go('home')">Início</button></div><small>${dt(c.date)} · início ${c.time}</small><div class="total">${R(tot(c))}</div><small>${c.items.length} lançamentos</small></div>
+  <button class="btn" onclick="scan()">📷 BIPAR ${c.items.length?'PRÓXIMO ':''}PRODUTO</button>
+  <button class="btn sec" onclick="fromScan=false;openItem({})">ADICIONAR MANUALMENTE</button>
+  <button class="btn sec" onclick="PF.fav=true;go('prods')">⭐ PRODUTOS FAVORITOS</button>
+  <button class="btn sec" onclick="go('list',c.id)">VER LISTA DA FEIRA</button>
+  ${LL(c)?`<button class="btn sec" onclick="go('fl')">📋 LISTA DE COMPRAS (${LL(c).items.filter(i=>i.status==='pendente').length} pendentes)</button>`:''}
+  <button class="btn ok" onclick="finish()">FINALIZAR FEIRA</button>`;
+ }
+ else if(view==='list'){
+  const f=S.fairs.find(x=>x.id===vid);if(!f)return go('home');const ed=f.status==='andamento';
+  a.innerHTML=`<button class="back" onclick="go('${ed?'shop':'hist'}')">← Voltar</button><div class="card"><h2>${esc(f.market)} · ${dt(f.date)}</h2><div class="mu">${f.time}${f.end?' – '+f.end:''} · ${f.items.length} lançamentos · ${un(f)} un.</div><div class="total">${R(tot(f))}</div>
+  ${f.items.length?f.items.map(i=>`<div class="item"><div class="row"><b>${esc(i.name)}</b><b>${R(i.price*i.qty)}</b></div><div class="row"><span class="mu">${fq(i.qty)} ${i.unit||'un'} × ${Rp(i.price)}/${i.unit||'un'}${i.code?' · '+esc(i.code):''}</span>${ed?`<span class="qty"><button onclick="qty('${i.id}',-1)">−</button> ${i.qty} <button onclick="qty('${i.id}',1)">+</button> <button onclick="editItem('${i.id}')">✏️</button> <button onclick="del('${i.id}')">🗑</button></span>`:`<span></span>`}</div></div>`).join(''):'<p class="mu">Nenhum item lançado.</p>'}</div>`;
+ }
+ else if(view==='hist'){
+  a.innerHTML=`<button class="back" onclick="go('home')">← Voltar</button><h2>Histórico de feiras</h2>${orcLine()}<input placeholder="Pesquisar supermercado" value="${esc(H.q)}" oninput="H.q=this.value;histList()">${filt(0)}<div id="hl"></div>`;histList();
+ }
+ else if(view==='gastos'){a.innerHTML=gastos();
+ }
+ else if(view==='cmp'){a.innerHTML=cmpView();cmpList();
+ }
+ else if(view==='prod'){a.innerHTML=prodView();
+ }
+ else if(view==='lists'){a.innerHTML=listsView();
+ }
+ else if(view==='pl'){a.innerHTML=plView();
+ }
+ else if(view==='fl'){a.innerHTML=flView();
+ }
+ else if(view==='orc'){a.innerHTML=orcView();
+ }
+ else if(view==='rel'){a.innerHTML=relView();
+ }
+ else if(view==='cfg'){a.innerHTML=cfgView();
+ }
+ else if(view==='prods'){
+  a.innerHTML=prodsView();prodList();
+ }
+}
+function startFair(){
+ const m=$('#mk').value.trim();if(!m)return alert('Informe o supermercado.');
+ if(cur())return go('shop');
+ if(!S.supers.includes(m))S.supers.push(m);
+ const fid='f'+Date.now(),lid=$('#ls').value||null;S.fairs.push({id:fid,market:m,date:$('#dd').value,time:$('#hh').value,status:'andamento',items:[],listId:lid});const L0=S.lists.find(x=>x.id===lid);if(L0)L0.fairId=fid;
+ save();go('shop');
+}
+function finish(){if(!cur().items.length&&!confirm('Nenhum item lançado. Finalizar mesmo assim?'))return;
+ if(LL(cur()))return sumModal();if(!confirm('Finalizar esta feira? Total: '+R(tot(cur()))))return;
+ const f=cur();f.status='finalizada';f.end=now().t;save();go('home')}
+function qty(id,d){const f=cur(),i=f.items.find(x=>x.id===id);const n=+(i.qty+d*(['g','ml'].includes(i.unit)?100:1)).toFixed(3);if(n>0)i.qty=n;save();render()}
+function del(id){const f=cur();f.items=f.items.filter(x=>x.id!==id);S.lists.forEach(L=>L.items.forEach(i=>{if(i.lid===id){i.status='pendente';i.lid=null}}));save();render()}
+function delProd(i){const k=PK[i];if(!confirm('Excluir este produto do cadastro? O histórico de compras é mantido.'))return;delete S.products[k];save();render()}
+let busy=false,sending=false,fromScan=false,curId='',curEdit='';
+function close(){$('#m').innerHTML='';busy=false;sending=false}
+async function stopScan(){if(scanner){try{await scanner.stop()}catch(e){}try{scanner.clear()}catch(e){}scanner=null}}
+async function closeScan(){await stopScan();close();render()}
+const num=s=>{s=String(s).trim();if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');return s===''?NaN:Number(s)};
+function scan(){
+ busy=false;fromScan=true;const c=cur();
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><div class="row"><b>${esc(c.market)}</b><b>${c.items.length} itens · ${R(tot(c))}</b></div><h2 style="margin-top:10px">Aponte para o código de barras</h2><div id="reader"></div><p id="se" class="mu">Centralize o código na área de leitura.</p><button class="btn sec" onclick="closeScan()">✕ FECHAR LEITOR</button></div></div>`;
+ try{
+  const H=window.Html5Qrcode,F=window.Html5QrcodeSupportedFormats;
+  scanner=new H('reader',{formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E],verbose:false});
+  scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:160}},t=>found(String(t)),()=>{}).catch(()=>{$('#se').textContent='Câmera indisponível ou sem permissão. Libere o acesso à câmera no navegador e tente de novo.'});
+ }catch(e){$('#se').textContent='Leitor indisponível neste navegador.'}
+}
+async function found(code){
+ if(busy||!code)return;busy=true;await stopScan();
+ const p=S.products[code];openItem(p?{...p,known:true}:{code});
+}
+function editItem(id){const i=cur().items.find(x=>x.id===id);fromScan=false;openItem({code:i.code,name:i.name,price:i.price,qty:i.qty,unit:i.unit,known:!!i.code},id)}
+function sub(){const pv=num($('#ip').value),tv=LE==='t'?num($('#it').value):NaN;$('#sb').textContent=R(isFinite(tv)?tv:(pv||0)*(num($('#iq').value)||0));
+ const w=$('#pw'),pr=curEdit?null:S.products[$('#ic').value.trim()];
+ if(w)w.textContent=(pr&&pr.last!=null&&pv>0&&Math.abs(pv-pr.last)>0.004&&(!pr.unit||pr.unit===$('#iu').value))?`Preço anterior ${R(pr.last)} → atual ${R(pv)} (${sg(pv-pr.last)}${pct(pv,pr.last)?' · '+pct(pv,pr.last):''})`:''}
+function cancelItem(){const s=fromScan&&!curEdit;close();if(s)scan();else render()}
+function openItem(p,eid){
+ LE='p';curEdit=eid||'';curId='i'+Date.now()+Math.random().toString(36).slice(2,6);sending=false;
+ const nw=!p.known&&p.code&&!eid,lab=eid?'SALVAR ALTERAÇÕES':nw?'SALVAR E ADICIONAR À FEIRA':'ADICIONAR À FEIRA';
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>${eid?'Editar lançamento':p.known?'Lançar produto':nw?'Produto novo':'Adicionar manualmente'}</h2>
+ <label>Código</label><input id="ic" value="${esc(p.code||'')}" ${p.code?'readonly':''} placeholder="Opcional" inputmode="numeric">
+ <label>Nome do produto</label><input id="in" value="${esc(p.name||'')}" ${p.known?'readonly':''}>
+ ${nw||(!p.known&&!eid)?'<label>Marca (opcional)</label><input id="ib">'+catSel():''}
+ <label>Preço unitário pago (R$)</label><input id="ip" inputmode="decimal" value="${eid?String(p.price).replace('.',','):''}" placeholder="0,00" oninput="ed('p')" onfocus="this.scrollIntoView({block:'center'})">
+ ${p.last!=null&&!eid?`<div class="mu">Referência: último preço pago ${R(p.last)}</div>`:''}
+ <label>Preço por</label><select id="iu" onchange="sub()">${UN.map(u=>`<option ${(p.unit||'un')===u?'selected':''}>${u}</option>`).join('')}</select>
+ <label>Quantidade</label><input id="iq" inputmode="decimal" value="${eid?String(p.qty).replace('.',','):'1'}" oninput="ed()">
+ <label>Total do item (R$) — opcional</label><input id="it" inputmode="decimal" placeholder="Ou informe o total pago" oninput="ed('t')">
+ <div id="pw" class="mu" style="margin-top:8px"></div><div class="mu" style="margin-top:10px">Subtotal</div><div class="total" id="sb" style="font-size:30px">R$ 0,00</div>
+ <button class="btn ok" id="ok" style="margin-top:14px" onclick="addItem()">${lab}</button><button class="btn sec" onclick="cancelItem()">CANCELAR</button></div></div>`;
+ ed('p');setTimeout(()=>{const e=$('#ip');if(e)e.focus()},80);
+}
+function addItem(){
+ if(sending)return;
+ const code=$('#ic').value.trim(),name=$('#in').value.trim(),b=$('#ib'),brand=b?b.value.trim():'',q=num($('#iq').value),unit=$('#iu').value,tt=LE==='t'?num($('#it').value):NaN,price=isFinite(tt)&&q>0?tt/q:num($('#ip').value);
+ if(!name)return alert('Informe o nome do produto.');
+ if(!isFinite(price)||price<=0)return alert('Informe um preço válido.');
+ if(!isFinite(q)||q<=0)return alert('Quantidade inválida.');
+ sending=true;$('#ok').disabled=true;
+ const snap=JSON.stringify(S),f=cur();
+ if(curEdit){const i=f.items.find(x=>x.id===curEdit);i.price=price;i.qty=q;i.unit=unit}
+ else if(!f.items.some(x=>x.id===curId))f.items.push({id:curId,code,name,price,qty:q,unit});
+ if(code){const ex=S.products[code];if(ex){ex.last=price;ex.unit=unit}else S.products[code]={code,name,brand,cat:$('#icat')?$('#icat').value:'',last:price,unit}}
+ if(!curEdit&&f.listId)autoLink(f,{id:curId,code,name});
+ if(!save()){S=JSON.parse(snap);sending=false;$('#ok').disabled=false;return alert('Lançamento NÃO confirmado: falha ao salvar. Tente novamente.')}
+ const again=fromScan&&!curEdit;close();render();if(again)scan();
+}
+const H={q:'',from:'',to:'',k:'all'},G={from:'',to:'',k:'all',sort:'gasto',mode:'mes'},d0=new Date();
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const C={a:iso(d0).slice(0,7),b:iso(new Date(d0.getFullYear(),d0.getMonth()-1,1)).slice(0,7)};
+const un=f=>String(+f.items.reduce((a,i)=>a+i.qty,0).toFixed(3)).replace('.',',');
+const inP=(f,p)=>(!p.from||f.date>=p.from)&&(!p.to||f.date<=p.to);
+const sum=l=>l.reduce((a,f)=>a+tot(f),0);
+const sg=d=>(d>0?'+':d<0?'−':'')+R(Math.abs(d));
+function qr(k){const y=d0.getFullYear(),m=d0.getMonth();
+ if(k==='mes')return[iso(new Date(y,m,1)),iso(new Date(y,m+1,0))];
+ if(k==='ant')return[iso(new Date(y,m-1,1)),iso(new Date(y,m,0))];
+ if(k==='3m')return[iso(new Date(y,m-2,1)),iso(new Date(y,m+1,0))];
+ if(k==='ano')return[y+'-01-01',y+'-12-31'];
+ return['',''];}
+function setQ(w,k){const P=[H,G,R4][w];P.k=k;[P.from,P.to]=qr(k);render()}
+function setD(w,f,v){const P=[H,G,R4][w];P[f]=v;P.k='';render()}
+function filt(w){const P=[H,G,R4][w],ks=[['mes','Este mês'],['ant','Mês anterior'],['3m','Últimos 3 meses'],['ano','Este ano'],['all','Todo o histórico']];
+ return `<div class="chips">${ks.map(([k,l])=>`<button class="chip ${P.k===k?'on':''}" onclick="setQ(${w},'${k}')">${l}</button>`).join('')}</div><div class="row" style="gap:8px;margin-bottom:12px"><input type="date" value="${P.from}" onchange="setD(${w},'from',this.value)"><input type="date" value="${P.to}" onchange="setD(${w},'to',this.value)"></div>`}
+function histList(){const q=H.q.trim().toLowerCase();
+ const l=S.fairs.filter(f=>inP(f,H)&&f.market.toLowerCase().includes(q)).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+ $('#hl').innerHTML=l.map(f=>`<div class="card" onclick="go('list','${f.id}')"><div class="row"><b>${esc(f.market)}</b><b>${R(tot(f))}</b></div><div class="mu">${dt(f.date)} · ${f.time}${f.end?' – '+f.end:''}${f.status==='andamento'?' · em andamento':''}</div><div class="mu">${f.items.length} lançamentos · ${un(f)} un.</div></div>`).join('')||'<p class="mu">Nenhuma feira encontrada.</p>'}
+function gastos(){
+ const fs=S.fairs.filter(f=>f.status==='finalizada'&&inP(f,G)),n=fs.length,T=sum(fs),mx=fs.reduce((a,f)=>Math.max(a,tot(f)),0);
+ const lf=[...fs].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))[0];
+ const M={};fs.forEach(f=>{const m=M[f.market]||(M[f.market]={n:f.market,c:0,t:0,d:''});m.c++;m.t+=tot(f);if(f.date>m.d)m.d=f.date});
+ const so={gasto:(a,b)=>b.t-a.t,menor:(a,b)=>a.t-b.t,media:(a,b)=>b.t/b.c-a.t/a.c,recente:(a,b)=>b.d.localeCompare(a.d),nome:(a,b)=>a.n.localeCompare(b.n)};
+ const L=Object.values(M).sort(so[G.sort]);
+ const D=G.mode==='mes'?Object.entries(fs.reduce((o,f)=>{const k=f.date.slice(0,7);o[k]=(o[k]||0)+tot(f);return o},{})).sort().map(([k,v])=>[k.slice(5)+'/'+k.slice(0,4),v]):[...L].sort(so.gasto).map(m=>[m.n,m.t]);
+ const mv=Math.max(...D.map(x=>x[1]),1);
+ const mt=m=>S.fairs.filter(f=>f.status==='finalizada'&&f.date.slice(0,7)===m),A=mt(C.a),B=mt(C.b),ta=sum(A),tb=sum(B),df=ta-tb;
+ const pc=tb>0?(df>0?'+':df<0?'−':'')+Math.abs(df/tb*100).toFixed(1).replace('.',',')+'%':'';
+ const opt=(v,l)=>`<option value="${v}" ${G.sort===v?'selected':''}>${l}</option>`;
+ return `<button class="back" onclick="go('home')">← Voltar</button><h2>Meus gastos</h2><button class="btn sec" onclick="OM=curM();go('orc')">ORÇAMENTO MENSAL</button>${filt(1)}
+ <div class="g2"><div class="card"><div class="mu">Total gasto</div><div class="total">${R(T)}</div></div><div class="card"><div class="mu">Feiras realizadas</div><div class="total">${n}</div></div>
+ <div class="card"><div class="mu">Média por feira</div><div class="total">${R(n?T/n:0)}</div></div><div class="card"><div class="mu">Maior gasto</div><div class="total">${R(mx)}</div></div></div>
+ <div class="card"><div class="mu">Última compra</div>${lf?`<b>${esc(lf.market)}</b> · ${dt(lf.date)}`:'Nenhuma feira finalizada no período.'}</div>
+ <div class="card"><h2>Gráfico</h2><div class="chips"><button class="chip ${G.mode==='mes'?'on':''}" onclick="G.mode='mes';render()">Por mês</button><button class="chip ${G.mode==='mkt'?'on':''}" onclick="G.mode='mkt';render()">Por supermercado</button></div>
+ ${D.length?D.map(([l,v])=>`<div style="margin:8px 0"><div class="row mu"><span>${esc(l)}</span><b>${R(v)}</b></div><div class="bar"><i style="width:${v/mv*100}%"></i></div></div>`).join(''):'<p class="mu">Ainda não há feiras finalizadas no período para exibir.</p>'}</div>
+ <div class="card"><h2>Por supermercado</h2><select onchange="G.sort=this.value;render()">${opt('gasto','Maior gasto')}${opt('menor','Menor gasto')}${opt('media','Maior média')}${opt('recente','Compra mais recente')}${opt('nome','Nome')}</select>
+ ${L.map(m=>`<div class="item"><div class="row"><b>${esc(m.n)}</b><b>${R(m.t)}</b></div><div class="mu">${m.c} feira(s) · média ${R(m.t/m.c)} · última ${dt(m.d)}</div></div>`).join('')||'<p class="mu">Sem dados no período.</p>'}
+ ${L.length?'<p class="mu">Um total menor não significa que o mercado é mais barato: depende do que foi comprado.</p>':''}</div>
+ <div class="card"><h2>Comparar meses</h2><div class="row" style="gap:8px"><input type="month" value="${C.a}" onchange="if(this.value){C.a=this.value;render()}"><input type="month" value="${C.b}" onchange="if(this.value){C.b=this.value;render()}"></div>
+ <div class="row item"><span>${C.a.split('-').reverse().join('/')}</span><span><b>${R(ta)}</b> · ${A.length} feira(s)</span></div><div class="row item"><span>${C.b.split('-').reverse().join('/')}</span><span><b>${R(tb)}</b> · ${B.length} feira(s)</span></div>
+ <div class="total" style="font-size:26px">${sg(df)} ${pc?'('+pc+')':''}</div>${pc?'':'<p class="mu">Sem base para calcular a variação percentual.</p>'}</div>`;
+}
+const by=(a,f)=>a.reduce((o,r)=>{(o[f(r)]=o[f(r)]||[]).push(r);return o},{});
+const pct=(a,b)=>b>0?((a>b?'+':a<b?'−':'')+Math.abs((a-b)/b*100).toFixed(1).replace('.',',')+'%'):'';
+let Q4='',LK=[],P4={k:'all',from:'',to:'',m:''};
+const rk=i=>i.code||'n:'+i.name.trim().toLowerCase();
+function recs(){const r=[];S.fairs.forEach(f=>{if(f.status==='finalizada')f.items.forEach(i=>r.push({s:r.length,k:rk(i),code:i.code,name:i.name,price:i.price*(NU[i.unit]||['',1])[1],qty:i.qty/(NU[i.unit]||['',1])[1],u:(NU[i.unit]||[i.unit||'un'])[0],date:f.date,time:f.time,market:f.market}))});return r.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||b.s-a.s)}
+function openProd(i){P4={k:'all',from:'',to:'',m:''};go('prod',LK[i])}
+function cmpView(){return `<button class="back" onclick="go('home')">← Voltar</button><h2>Comparar preços</h2><input placeholder="Nome ou código de barras" value="${esc(Q4)}" oninput="Q4=this.value;cmpList()"><div id="cl" style="margin-top:12px"></div>${incr()}`}
+function cmpList(){const q=Q4.trim().toLowerCase(),m={};
+ recs().forEach(r=>{if(!m[r.k])m[r.k]=r});
+ const l=Object.values(m).filter(r=>!q||r.name.toLowerCase().includes(q)||(r.code||'').includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+ LK=l.map(r=>r.k);
+ $('#cl').innerHTML=l.map((r,i)=>`<div class="card" onclick="openProd(${i})"><div class="row"><b>${esc(r.name)}</b><b>${R(r.price)}/${r.u}</b></div><div class="mu">${(S.products[r.code]||{}).cat?esc(S.products[r.code].cat)+' · ':''}${r.code?esc(r.code)+' · ':''}última compra ${dt(r.date)} · ${esc(r.market)}</div></div>`).join('')||'<p class="mu">Nenhum produto com compras finalizadas encontrado.</p>'}
+function incr(){const g=by(recs(),r=>r.k+'|'+r.u);
+ const L=Object.values(g).filter(a=>a.length>1).map(a=>({n:a[0],o:a[1]})).filter(x=>x.n.price>x.o.price).sort((a,b)=>b.n.price/b.o.price-a.n.price/a.o.price);
+ return `<div class="card"><h2>Maiores aumentos</h2><p class="mu">Entre as duas últimas compras do mesmo produto (mesmo código e mesma unidade).</p>${L.map(x=>`<div class="item"><b>${esc(x.n.name)}</b><div class="row"><span>${R(x.o.price)} → ${R(x.n.price)}/${x.n.u}</span><b>${sg(x.n.price-x.o.price)} ${pct(x.n.price,x.o.price)}</b></div><div class="mu">${dt(x.o.date)} (${esc(x.o.market)}) → ${dt(x.n.date)} (${esc(x.n.market)})</div></div>`).join('')||'<p class="mu">Ainda não há aumentos registrados.</p>'}</div>`}
+function setP(k){const y=d0.getFullYear(),m=d0.getMonth(),d=d0.getDate(),f={'30':new Date(y,m,d-30),'90':new Date(y,m,d-90),'6m':new Date(y,m-6,d),'12m':new Date(y-1,m,d)}[k];P4.k=k;P4.from=f?iso(f):'';P4.to='';render()}
+function prodView(){
+ const all=recs().filter(r=>r.k===vid),bk=`<button class="back" onclick="go('cmp')">← Voltar</button>`;
+ if(!all.length)return bk+'<p class="mu">Produto sem compras finalizadas.</p>';
+ const l=all[0],P=P4,rp=all.filter(r=>(!P.from||r.date>=P.from)&&(!P.to||r.date<=P.to)),fl=rp.filter(r=>!P.m||r.market===P.m);
+ const mk=[...new Set(all.map(r=>r.market))].sort(),bu=by(rp,r=>r.u),uk=Object.keys(bu);
+ const ks=[['30','30 dias'],['90','90 dias'],['6m','6 meses'],['12m','12 meses'],['all','Tudo']];
+ const ev=Object.entries(by(fl,r=>r.u)).map(([u,a])=>{if(a.length<2)return `<p class="mu">Registros insuficientes${uk.length>1?' (preço por '+u+')':''} para mostrar a evolução.</p>`;const n=a[0],o=a[a.length-1],d=n.price-o.price;return `<div class="item">${uk.length>1?'<div class="mu">Preço por '+u+'</div>':''}<div class="row"><span>Anterior (${dt(o.date)})</span><b>${R(o.price)}</b></div><div class="row"><span>Mais recente (${dt(n.date)})</span><b>${R(n.price)}</b></div><div class="row"><span>Diferença</span><b>${sg(d)} ${pct(n.price,o.price)}</b></div></div>`}).join('')||'<p class="mu">Sem registros no período.</p>';
+ const cp=uk.map(u=>{const a=bu[u],bm=by(a,r=>r.market),ms=Object.keys(bm);if(ms.length<2)return '';
+  const mn=a.reduce((x,r)=>r.price<x.price?r:x,a[0]);
+  return `<div class="item">${uk.length>1?'<b>Preço por '+u+'</b>':''}<div style="margin:6px 0">🏷️ Menor preço já registrado: <b>${R(mn.price)}/${u}</b> em ${esc(mn.market)}, ${dt(mn.date)}</div>${ms.map(m=>{const b=bm[m],ps=b.map(r=>r.price),lo=Math.min(...ps),hi=Math.max(...ps);return `<div class="mu" style="margin:6px 0"><b>${esc(m)}</b>: último ${R(b[0].price)} (${dt(b[0].date)}) · menor ${R(lo)} · maior ${R(hi)} · diferença ${R(hi-lo)}</div>`}).join('')}</div>`}).join('');
+ return `${bk}<div class="card"><h2>${esc(l.name)}</h2><div class="mu">${l.code?'Código '+esc(l.code):'Sem código de barras'}</div><div class="total" style="font-size:30px">${R(l.price)}/${l.u}</div><div class="mu">Último preço pago · ${dt(l.date)} · ${esc(l.market)}</div></div>
+ <div class="chips">${ks.map(([k,t])=>`<button class="chip ${P.k===k?'on':''}" onclick="${k==='all'?"P4.k='all';P4.from='';P4.to='';render()":`setP('${k}')`}">${t}</button>`).join('')}</div>
+ <div class="row" style="gap:8px;margin-bottom:8px"><input type="date" value="${P.from}" onchange="P4.from=this.value;P4.k='c';render()"><input type="date" value="${P.to}" onchange="P4.to=this.value;P4.k='c';render()"></div>
+ <select onchange="P4.m=this.value;render()" style="margin-bottom:14px"><option value="">Todos os supermercados</option>${mk.map(m=>`<option value="${esc(m)}" ${P.m===m?'selected':''}>${esc(m)}</option>`).join('')}</select>
+ <div class="card"><h2>Evolução no período</h2>${ev}</div>
+ <div class="card"><h2>Entre supermercados</h2>${cp||'<p class="mu">Há registros em apenas um supermercado no período; não é possível comparar.</p>'}${uk.length>1?'<p class="mu">Unidades diferentes foram separadas e não são comparadas entre si.</p>':''}<p class="mu">Os preços são de compras anteriores e podem ter mudado. Compare apenas a mesma apresentação (mesmo código e unidade). Preços em g e ml são convertidos para kg e L; unidades incompatíveis (ex.: kg e un) não são comparadas.</p></div>
+ <div class="card"><h2>Histórico de preços</h2>${fl.map(r=>`<div class="item"><div class="row"><b>${dt(r.date)} · ${esc(r.market)}</b><b>${R(r.price)}/${r.u}</b></div><div class="mu">${String(r.qty).replace('.',',')} ${r.u} · subtotal ${R(r.price*r.qty)}</div></div>`).join('')||'<p class="mu">Sem registros para o filtro.</p>'}</div>`;
+}
+let LI={},LP=[];
+const LL=c=>S.lists.find(x=>x.id===c.listId),fq=q=>String(q).replace('.',',');
+const lt=L=>{const k=L.items.filter(i=>i.est!=null);return{n:L.items.length,tot:k.reduce((a,i)=>a+i.est*i.qty,0),sem:L.items.length-k.length,comp:L.items.filter(i=>i.status==='comprado').length,pend:L.items.filter(i=>i.status==='pendente').length}};
+const newIt=i=>({id:'li'+Date.now()+Math.random().toString(36).slice(2,6),name:i.name,code:i.code,unit:i.unit,qty:i.qty,est:i.est,status:'pendente',lid:null});
+function autoLink(f,r){const L=LL(f);if(!L)return;const nm=r.name.trim().toLowerCase();
+ const c=L.items.filter(i=>i.status==='pendente'&&((r.code&&i.code===r.code)||i.name.trim().toLowerCase()===nm));
+ if(c.length===1){c[0].status='comprado';c[0].lid=r.id}}
+function listsView(){return `<button class="back" onclick="go('home')">← Voltar</button><h2>Listas de compras</h2><button class="btn" onclick="openList('')">+ NOVA LISTA</button>`+(S.lists.length?[...S.lists].reverse().map(L=>{const t=lt(L);return `<div class="card"><div onclick="go('pl','${L.id}')"><div class="row"><b>${esc(L.name)}</b><span class="mu">${L.status==='ativa'?(L.fairId?'em uso':'ativa'):'finalizada'}</span></div><div class="mu">${dt(L.created)} · ${t.n} itens · est. ${R(t.tot)}${t.sem?' (+'+t.sem+' sem preço)':''}</div></div><div class="row" style="margin-top:10px;gap:8px"><button class="btn sm sec" onclick="dupList('${L.id}')">Duplicar</button><button class="btn sm er" onclick="delList('${L.id}')">Excluir</button></div></div>`}).join(''):'<p class="mu">Nenhuma lista ainda. Crie uma antes de ir ao mercado.</p>')}
+function plView(){const L=S.lists.find(x=>x.id===vid);if(!L)return '';const t=lt(L),ed=L.status==='ativa';
+ return `<button class="back" onclick="go('lists')">← Voltar</button><div class="row"><h2>${esc(L.name)}</h2>${ed?`<button class="btn sm sec" onclick="openList('${L.id}')">Renomear</button>`:''}</div>
+ <div class="card"><div class="mu">Total estimado (itens com preço)</div><div class="total">${R(t.tot)}</div><div class="mu">${t.n} itens planejados · ${t.sem} sem preço estimado</div><p class="mu">É uma estimativa e pode diferir do valor realmente gasto. Itens sem preço não entram no total.</p></div>
+ ${ed?`<button class="btn" onclick="openLI('${L.id}','')">+ ADICIONAR ITEM</button>`:'<p class="mu">Lista finalizada (somente consulta). Use Duplicar para reaproveitar.</p>'}
+ <div class="card">${L.items.map(i=>`<div class="item"><div class="row"><b>${i.status==='comprado'?'✅ ':''}${esc(i.name)}</b><b>${i.est!=null?R(i.est*i.qty):'—'}</b></div><div class="row"><span class="mu">${fq(i.qty)} ${i.unit}${i.est!=null?' × '+R(i.est):' · sem preço estimado'}${i.code?' · '+esc(i.code):''}</span>${ed?`<span><button class="btn sm sec" onclick="openLI('${L.id}','${i.id}')">✏️</button> <button class="btn sm er" onclick="delLI('${L.id}','${i.id}')">🗑</button></span>`:''}</div></div>`).join('')||'<p class="mu">Lista vazia.</p>'}</div>`}
+function openList(id){const L=S.lists.find(x=>x.id===id);$('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>${L?'Renomear lista':'Nova lista'}</h2><label>Nome</label><input id="ln" value="${esc(L?L.name:'')}" placeholder="Ex.: Compras da semana"><button class="btn ok" style="margin-top:14px" onclick="saveList('${id}')">SALVAR</button><button class="btn sec" onclick="close()">CANCELAR</button></div></div>`;setTimeout(()=>$('#ln').focus(),80)}
+function saveList(id){const n=$('#ln').value.trim();if(!n)return alert('Informe o nome da lista.');const L=S.lists.find(x=>x.id===id);
+ if(L)L.name=n;else{const nl={id:'l'+Date.now(),name:n,created:now().d,status:'ativa',fairId:null,items:[]};S.lists.push(nl);id=nl.id}
+ save();close();go('pl',id)}
+function dupList(id){const L=S.lists.find(x=>x.id===id);S.lists.push({id:'l'+Date.now(),name:L.name+' (cópia)',created:now().d,status:'ativa',fairId:null,items:L.items.map(newIt)});save();render()}
+function delList(id){const f=cur();if(f&&f.listId===id)return alert('Esta lista está vinculada à feira em andamento.');if(!confirm('Excluir esta lista?'))return;S.lists=S.lists.filter(x=>x.id!==id);save();render()}
+function delLI(lid,iid){const L=S.lists.find(x=>x.id===lid);L.items=L.items.filter(x=>x.id!==iid);save();render()}
+function openLI(lid,iid){const L=S.lists.find(x=>x.id===lid),i=L.items.find(x=>x.id===iid)||{};LI={lid,iid};
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>${iid?'Editar item':'Adicionar item'}</h2>
+ <label>Nome do produto</label><input id="ln2" value="${esc(i.name||'')}" oninput="lsug()" placeholder="Pesquise ou digite">
+ <label>Código de barras (opcional)</label><input id="lc" inputmode="numeric" value="${esc(i.code||'')}" oninput="lsug()">
+ <div id="sg" class="chips" style="flex-wrap:wrap"></div>
+ <label>Quantidade desejada</label><input id="lq" inputmode="decimal" value="${i.qty?fq(i.qty):'1'}">
+ <label>Unidade</label><select id="lu">${UN.map(u=>`<option ${(i.unit||'un')===u?'selected':''}>${u}</option>`).join('')}</select>
+ <label>Preço estimado unitário (opcional)</label><input id="le" inputmode="decimal" value="${i.est!=null?fq(i.est):''}" placeholder="Em branco = sem estimativa">
+ <div id="lnote" class="mu"></div>
+ <button class="btn ok" style="margin-top:14px" onclick="saveLI()">SALVAR ITEM</button><button class="btn sec" onclick="close()">CANCELAR</button></div></div>`;lsug()}
+function lsug(){const q=$('#ln2').value.trim().toLowerCase(),c=$('#lc').value.trim();
+ LP=Object.values(S.products).filter(p=>(c&&p.code===c)||(q.length>1&&p.name.toLowerCase().includes(q))||(!q&&!c&&p.fav)).slice(0,6);.innerHTML=LP.map((p,k)=>`<button class="chip" onclick="lpick(${k})">${p.fav?'⭐ ':''}${esc(p.name)}</button>`).join('')}
+function lpick(k){const p=LP[k];$('#ln2').value=p.name;$('#lc').value=p.code;$('#lu').value=p.unit||'un';$('#sg').innerHTML='';
+ if(p.last!=null){$('#le').value=fq(p.last);$('#lnote').textContent='Sugestão: último preço pago ('+R(p.last)+'). Pode não ser o preço atual; edite se quiser.'}}
+function saveLI(){const L=S.lists.find(x=>x.id===LI.lid),name=$('#ln2').value.trim(),q=num($('#lq').value),ev=$('#le').value.trim(),est=ev===''?null:num(ev);
+ if(!name)return alert('Informe o nome.');if(!isFinite(q)||q<=0)return alert('Quantidade inválida.');if(est!==null&&(!isFinite(est)||est<0))return alert('Preço estimado inválido.');
+ const d={name,code:$('#lc').value.trim(),qty:q,unit:$('#lu').value,est},i=L.items.find(x=>x.id===LI.iid);
+ if(i)Object.assign(i,d);else L.items.push({id:'li'+Date.now()+Math.random().toString(36).slice(2,5),status:'pendente',lid:null,...d});
+ save();close();render()}
+function flView(){const f=cur(),L=f&&LL(f),bk=`<button class="back" onclick="go('shop')">← Voltar</button>`;if(!L)return bk+'<p class="mu">Esta feira não tem lista vinculada.</p>';const t=lt(L);
+ return `${bk}<h2>${esc(L.name)}</h2>
+ <div class="g2"><div class="card"><div class="mu">Estimado (orçamento)</div><div class="total">${R(t.tot)}</div><div class="mu">${t.sem?t.sem+' sem preço':'todos com preço'}</div></div><div class="card"><div class="mu">Lançado na feira</div><div class="total">${R(tot(f))}</div></div></div>
+ <div class="mu" style="margin-bottom:10px">${t.n} planejados · ${t.comp} comprados · ${t.pend} pendentes. O estimado é só uma previsão.</div>
+ <div class="card">${L.items.map(i=>{const r=f.items.find(x=>x.id===i.lid);return `<div class="item"><div class="row"><b>${i.status==='comprado'?'✅':'⬜'} ${esc(i.name)}</b><span>${fq(i.qty)} ${i.unit}</span></div><div class="row"><span class="mu">${i.est!=null?'est. '+R(i.est)+'/'+i.unit:'sem preço estimado'}${r?' · pago '+R(r.price):''}</span>${i.status==='comprado'?`<button class="btn sm sec" onclick="unlink('${i.id}')">Desfazer</button>`:`<button class="btn sm" onclick="linkPick('${i.id}')">Vincular compra</button>`}</div></div>`}).join('')||'<p class="mu">Lista vazia.</p>'}</div>`}
+function unlink(iid){const i=LL(cur()).items.find(x=>x.id===iid);i.status='pendente';i.lid=null;save();render()}
+function linkPick(iid){const f=cur(),L=LL(f),u=new Set(L.items.map(i=>i.lid)),a=f.items.filter(x=>!u.has(x.id));
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>Qual lançamento corresponde?</h2>${a.map(x=>`<button class="btn sec" onclick="doLink('${iid}','${x.id}')">${esc(x.name)} · ${R(x.price)} × ${fq(x.qty)}</button>`).join('')||'<p class="mu">Nenhum lançamento livre. Lance o produto na feira (bipar ou adicionar) e depois vincule: só vira "comprado" com um lançamento confirmado.</p>'}<button class="btn" onclick="close()">FECHAR</button></div></div>`}
+function doLink(iid,xid){const i=LL(cur()).items.find(x=>x.id===iid);i.status='comprado';i.lid=xid;save();close();render()}
+function sumModal(){const f=cur(),t=lt(LL(f)),sp=tot(f);
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>Resumo da feira</h2>
+ <div class="row item"><span>Total estimado da lista</span><b>${R(t.tot)}</b></div><div class="row item"><span>Total efetivamente gasto</span><b>${R(sp)}</b></div><div class="row item"><span>Diferença (gasto − estimado)</span><b>${sg(sp-t.tot)}</b></div>
+ <div class="row item"><span>Itens planejados</span><b>${t.n}</b></div><div class="row item"><span>Comprados</span><b>${t.comp}</b></div><div class="row item"><span>Pendentes</span><b>${t.pend}</b></div>
+ ${t.sem?`<p class="mu">${t.sem} item(ns) sem preço estimado: o orçamento pode estar incompleto.</p>`:''}${t.pend?'<p class="mu">Itens pendentes não são economia: apenas não foram comprados.</p>':''}
+ <button class="btn ok" onclick="doFinish(0)">FINALIZAR${t.pend?' E MANTER PENDENTES NA LISTA':''}</button>${t.pend?'<button class="btn sec" onclick="doFinish(1)">FINALIZAR E COPIAR PENDENTES PARA NOVA LISTA</button>':''}<button class="btn sec" onclick="close()">VOLTAR</button></div></div>`}
+function doFinish(cp){const f=cur(),L=LL(f);f.status='finalizada';f.end=now().t;
+ if(L){L.status='finalizada';if(cp){const p=L.items.filter(i=>i.status==='pendente');if(p.length)S.lists.push({id:'l'+Date.now(),name:'Pendentes de '+L.name,created:now().d,status:'ativa',fairId:null,items:p.map(newIt)})}}
+ save();close();go('home')}
+const curM=()=>iso(new Date()).slice(0,7);let OM=curM();
+const mSpent=m=>sum(S.fairs.filter(f=>f.status==='finalizada'&&f.date.slice(0,7)===m));
+function ebud(m){const k=Object.keys(S.budget).filter(x=>x<=m).sort().pop();return k?S.budget[k]:null}
+function ost(m){const b=ebud(m),s=mSpent(m);if(b==null)return{b,s};const p=s/b*100;return{b,s,p,sal:b-s,lv:p>=100?2:p>=80?1:0}}
+const ob=o=>{const c=o.lv===2?'var(--er)':o.lv===1?'#e69500':'var(--ok)';return `<div class="bar"><i style="width:${Math.min(o.p,100)}%;background:${c}"></i></div>${o.lv?`<div style="color:${c};font-weight:700;margin-top:6px">⚠️ ${o.lv===2?'Orçamento ultrapassado':'Perto do limite do orçamento'}</div>`:''}`};
+function orcCard(){const o=ost(curM());
+ return `<div class="card" onclick="OM=curM();go('orc')"><div class="row"><b>Orçamento do mês</b><span class="mu">›</span></div>${o.b==null?'<div class="mu">Toque para definir seu orçamento mensal.</div>':`<div class="row"><span class="total" style="font-size:26px">${R(o.s)}</span><span class="mu">de ${R(o.b)}</span></div>${ob(o)}<div class="mu">${o.p.toFixed(0)}% usado · ${o.sal>=0?'saldo '+R(o.sal):'excedido em '+R(-o.sal)}</div>`}</div>`}
+function orcLine(){const o=ost(curM());return o.b==null?'':`<div class="mu" style="margin:4px 0 8px">Mês atual: ${R(o.s)} de ${R(o.b)} (${o.p.toFixed(0)}%)${o.lv?' ⚠️':''}</div>`}
+function lowTxt(c){const a=recs().filter(r=>r.k===c);if(!a.length)return '';const u=a[0].u,mn=a.filter(r=>r.u===u).reduce((x,r)=>r.price<x.price?r:x);return ` · menor registrado ${R(mn.price)}/${u} em ${esc(mn.market)}`}
+function openBud(){const b=ebud(OM);$('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>Orçamento a partir de ${OM.split('-').reverse().join('/')}</h2><label>Valor mensal (R$)</label><input id="bv" inputmode="decimal" value="${b!=null?fq(b):''}" placeholder="0,00"><p class="mu">Vale deste mês em diante. Meses anteriores mantêm o orçamento que tinham.</p><button class="btn ok" onclick="saveBud()">SALVAR</button><button class="btn sec" onclick="close()">CANCELAR</button></div></div>`;setTimeout(()=>$('#bv').focus(),80)}
+function saveBud(){const v=num($('#bv').value);if(!isFinite(v)||v<=0)return alert('Informe um valor maior que zero.');S.budget[OM]=v;save();close();render()}
+function orcView(){const o=ost(OM),fs=S.fairs.filter(f=>f.status==='finalizada'&&f.date.slice(0,7)===OM),M={};fs.forEach(f=>M[f.market]=(M[f.market]||0)+tot(f));
+ const L=Object.entries(M).sort((a,b)=>b[1]-a[1]),cf=cur(),T=o.s||1;
+ return `<button class="back" onclick="go('home')">← Voltar</button><h2>Orçamento mensal</h2><input type="month" value="${OM}" onchange="if(this.value){OM=this.value;render()}">
+ <div class="card" style="margin-top:12px">${o.b==null?`<div class="mu">Nenhum orçamento definido para este mês.</div><div class="total" style="font-size:28px">${R(o.s)}</div><div class="mu">gasto no mês</div>`:`<div class="mu">Orçamento</div><div class="total">${R(o.b)}</div><div class="g2" style="margin:10px 0 0"><div><div class="mu">Gasto</div><b>${R(o.s)}</b></div><div><div class="mu">${o.sal>=0?'Saldo disponível':'Excedido'}</div><b>${R(Math.abs(o.sal))}</b></div></div><div style="margin-top:10px">${ob(o)}</div><div class="mu">${o.p.toFixed(1).replace('.',',')}% consumido</div>`}
+ <button class="btn sec" style="margin-top:12px" onclick="openBud()">${o.b==null?'DEFINIR':'ALTERAR'} ORÇAMENTO</button>
+ <p class="mu">Conta só feiras finalizadas, com valores registrados. Listas planejadas e feiras em andamento${cf&&cf.date.slice(0,7)===OM?' ('+R(tot(cf))+' agora)':''} não entram.</p></div>
+ <div class="card"><h2>Gastos por supermercado</h2>${L.map(([n,v])=>`<div style="margin:8px 0"><div class="row"><span>${esc(n)}</span><b>${R(v)} · ${(v/T*100).toFixed(0)}%</b></div><div class="bar"><i style="width:${v/T*100}%"></i></div></div>`).join('')||'<p class="mu">Sem feiras finalizadas neste mês.</p>'}</div>${econ()}`}
+function econ(){const g=by(recs(),r=>r.k+'|'+r.u);
+ const L=Object.values(g).map(a=>{const mn=a.reduce((x,r)=>r.price<x.price?r:x,a[0]),mx=a.reduce((x,r)=>r.price>x.price?r:x,a[0]);return{mn,mx,sv:a.reduce((s,r)=>s+(r.price-mn.price)*r.qty,0)}}).filter(x=>x.mx.price>x.mn.price).sort((x,y)=>y.sv-x.sv),pot=L.reduce((s,x)=>s+x.sv,0);
+ return `<div class="card"><h2>Economia possível (histórico)</h2><p class="mu">Comparação histórica com base nas suas compras registradas, não é cotação em tempo real. Os preços podem ter mudado e promoções não são consideradas.</p>${L.length?`<div class="mu">Se as compras registradas tivessem sido feitas sempre pelo menor preço histórico de cada produto, a diferença seria de cerca de</div><div class="total" style="font-size:28px">${R(pot)}</div>`+L.slice(0,8).map(x=>`<div class="item"><b>${esc(x.mn.name)}</b><div class="mu">Menor: ${R(x.mn.price)}/${x.mn.u} em ${esc(x.mn.market)} (${dt(x.mn.date)})</div><div class="mu">Maior: ${R(x.mx.price)}/${x.mx.u} em ${esc(x.mx.market)} (${dt(x.mx.date)})</div><div class="mu">Diferença: ${R(x.mx.price-x.mn.price)}/${x.mn.u} (${pct(x.mx.price,x.mn.price)})</div></div>`).join(''):'<p class="mu">Ainda não há produtos com preços diferentes registrados para comparar.</p>'}</div>`}
+const R4={from:'',to:'',k:'all',m:'',p:''};let RP=[];
+const rv=f=>R4.p?f.items.filter(i=>rk(i)===R4.p).reduce((a,i)=>a+i.price*i.qty,0):tot(f);
+const rfs=()=>S.fairs.filter(f=>f.status==='finalizada'&&(!R4.m||f.market===R4.m)&&(!R4.p||rv(f)>0));
+const mV=m=>{const l=rfs().filter(f=>f.date.slice(0,7)===m);return{t:l.reduce((a,f)=>a+rv(f),0),n:l.length}};
+function relView(){
+ const all=recs(),cnt=by(all,r=>r.k),nm={};all.forEach(r=>{if(!nm[r.k])nm[r.k]=r.name});
+ RP=Object.keys(cnt).filter(k=>cnt[k].length>1).sort((x,y)=>nm[x].localeCompare(nm[y]));
+ const mk=[...new Set(S.fairs.filter(f=>f.status==='finalizada').map(f=>f.market))].sort();
+ const fs=rfs().filter(f=>inP(f,R4)),vs=fs.map(rv),n=fs.length,T=vs.reduce((x,y)=>x+y,0),mx=Math.max(0,...vs);
+ const cm=curM(),pd=new Date();pd.setDate(1);pd.setMonth(pd.getMonth()-1);const pm=iso(pd).slice(0,7),ca=mV(cm),cb=mV(pm),df=ca.t-cb.t;
+ const cl=df>0?'var(--er)':df<0?'var(--ok)':'var(--mu)';
+ const M=fs.reduce((o,f)=>{const k=f.date.slice(0,7);o[k]=(o[k]||0)+rv(f);return o},{}),D=Object.entries(M).sort(),mv=Math.max(...D.map(x=>x[1]),1);
+ let ph;
+ if(!R4.p)ph='<p class="mu">Selecione um produto (com ao menos 2 compras registradas) para ver o histórico de preços.</p>';
+ else{const rr=all.filter(r=>r.k===R4.p&&inP(r,R4)&&(!R4.m||r.market===R4.m)),bu=by(rr,r=>r.u),multi=Object.keys(bu).length>1;
+  ph=Object.entries(bu).map(([u,a])=>{const mn=a.reduce((x,r)=>r.price<x.price?r:x,a[0]),xm=a.reduce((x,r)=>r.price>x.price?r:x,a[0]),o=a[a.length-1],nw=a[0];
+   return `<div class="item">${multi?'<b>Preço por '+u+'</b>':''}<div class="g2" style="margin:8px 0"><div class="card"><div class="mu">🟢 Menor no período</div><b>${R(mn.price)}/${u}</b><div class="mu">${esc(mn.market)} · ${dt(mn.date)}</div></div><div class="card"><div class="mu">🔺 Maior no período</div><b>${R(xm.price)}/${u}</b><div class="mu">${esc(xm.market)} · ${dt(xm.date)}</div></div></div>${a.length>1?`<div class="row"><span>Evolução (${dt(o.date)} → ${dt(nw.date)})</span><b>${sg(nw.price-o.price)} ${pct(nw.price,o.price)}</b></div>`:'<p class="mu">Registros insuficientes para mostrar a evolução.</p>'}${a.map(r=>`<div style="margin:8px 0"><div class="row"><span>${dt(r.date)} · ${esc(r.market)}</span><b>${R(r.price)}/${u}${r===mn?' 🟢':''}${r===xm&&xm.price>mn.price?' 🔺':''}</b></div><div class="bar"><i style="width:${r.price/xm.price*100}%"></i></div></div>`).join('')}</div>`}).join('')||'<p class="mu">Sem registros do produto no período.</p>'}
+ ph+='<p class="mu">São preços pagos em compras anteriores, não preços atuais.</p>';
+ return `<button class="back" onclick="go('home')">← Voltar</button><h2>Relatórios</h2>${filt(2)}
+ <select onchange="R4.m=this.value;render()" style="margin-bottom:8px"><option value="">Todos os supermercados</option>${mk.map(m=>`<option value="${esc(m)}" ${R4.m===m?'selected':''}>${esc(m)}</option>`).join('')}</select>
+ <select onchange="R4.p=this.value===''?'':RP[this.value];render()" style="margin-bottom:14px"><option value="">Todos os produtos</option>${RP.map((k,i)=>`<option value="${i}" ${R4.p===k?'selected':''}>${esc(nm[k])}</option>`).join('')}</select>
+ <div class="g2"><div class="card"><div class="mu">Compras finalizadas</div><div class="total">${n}</div></div><div class="card"><div class="mu">Total gasto</div><div class="total">${R(T)}</div></div><div class="card"><div class="mu">Média por compra</div><div class="total">${R(n?T/n:0)}</div></div><div class="card"><div class="mu">Maior compra</div><div class="total">${R(mx)}</div></div></div>
+ ${R4.p?'<p class="mu">Valores referentes ao produto selecionado.</p>':''}
+ <div class="card"><h2>Mês atual x mês anterior</h2>${ca.n+cb.n===0?'<p class="mu">Sem compras finalizadas nos dois meses.</p>':`<div class="row item"><span>${pm.split('-').reverse().join('/')} · ${cb.n} compra(s)</span><b>${R(cb.t)}</b></div><div class="row item"><span>${cm.split('-').reverse().join('/')} · ${ca.n} compra(s)</span><b>${R(ca.t)}</b></div><div style="color:${cl};font-weight:700;font-size:20px;margin-top:8px">${df>0?'▲ Gastos aumentaram':df<0?'▼ Gastos diminuíram':'= Gastos iguais'}: ${sg(df)} ${pct(ca.t,cb.t)}</div>${cb.t>0?'':'<p class="mu">Sem base para calcular o percentual.</p>'}`}<p class="mu">Somente compras finalizadas; listas planejadas não entram.</p></div>
+ <div class="card"><h2>Gastos por mês</h2>${D.map(([k,v])=>`<div style="margin:8px 0"><div class="row mu"><span>${k.slice(5)}/${k.slice(0,4)}</span><b>${R(v)}</b></div><div class="bar"><i style="width:${v/mv*100}%"></i></div></div>`).join('')||'<p class="mu">Sem compras finalizadas para os filtros.</p>'}</div>
+ <div class="card"><h2>Histórico de preços</h2>${ph}</div>`}
+const UN=['un','kg','g','L','ml','pacote'];let PF={q:'',cat:'',fav:false},PK=[],PI=0,PE='',CE=-1;
+const catSel=()=>`<label>Categoria (opcional)</label><select id="icat"><option value="">Sem categoria</option>${S.cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>`;
+function prodsView(){return `<button class="back" onclick="go('home')">← Voltar</button><h2>Meus produtos</h2>
+ <input placeholder="Buscar por nome ou código" value="${esc(PF.q)}" oninput="PF.q=this.value;prodList()">
+ <div class="row" style="gap:8px;margin:8px 0"><select onchange="PF.cat=this.value;render()"><option value="">Todas as categorias</option>${S.cats.map(c=>`<option ${PF.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__none" ${PF.cat==='__none'?'selected':''}>Sem categoria</option></select><button class="chip ${PF.fav?'on':''}" onclick="PF.fav=!PF.fav;render()">⭐ Favoritos</button></div>
+ <div class="row" style="gap:8px"><button class="btn sm" onclick="openProdForm('')">+ NOVO PRODUTO</button><button class="btn sm sec" onclick="openCats()">CATEGORIAS</button></div><div id="pl2" style="margin-top:12px"></div>`}
+function prodList(){const q=PF.q.trim().toLowerCase(),c=cur(),P=S.products;
+ PK=Object.keys(P).filter(k=>{const p=P[k];return(!q||p.name.toLowerCase().includes(q)||(p.code||'').includes(q))&&(!PF.fav||p.fav)&&(!PF.cat||(PF.cat==='__none'?!p.cat:p.cat===PF.cat))}).sort((a,b)=>(P[b].fav?1:0)-(P[a].fav?1:0)||P[a].name.localeCompare(P[b].name));
+ $('#pl2').innerHTML=PK.map((k,i)=>{const x=P[k];return `<div class="card"><div class="row"><b>${x.fav?'⭐ ':''}${esc(x.name)}</b><button class="btn sm sec" onclick="togFav(${i})">${x.fav?'★':'☆'}</button></div><div class="mu">${[x.cat,x.brand,x.code,x.unit&&x.unit!=='un'?x.unit:''].filter(Boolean).map(esc).join(' · ')}${x.last!=null?' · último '+R(x.last):''}${lowTxt(x.code||'n:'+x.name.trim().toLowerCase())}</div><div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap;justify-content:flex-start"><button class="btn sm" onclick="prodToFair(${i})" ${c?'':'disabled style="opacity:.5"'}>+ Feira</button><button class="btn sm sec" onclick="prodToList(${i})">+ Lista</button><button class="btn sm sec" onclick="openProdForm(PK[${i}])">✏️</button><button class="btn sm er" onclick="delProd(${i})">🗑</button></div></div>`}).join('')||'<p class="mu">Nenhum produto encontrado.</p>'}
+function togFav(i){const p=S.products[PK[i]];p.fav=!p.fav;save();render()}
+function prodToFair(i){fromScan=false;openItem({...S.products[PK[i]],known:true})}
+function prodToList(i){const p=S.products[PK[i]];PI=i;const ls=S.lists.filter(l=>l.status==='ativa');
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>Adicionar a qual lista?</h2><p class="mu">${esc(p.name)}</p>${ls.map(l=>`<button class="btn sec" onclick="addToList('${l.id}')">${esc(l.name)}</button>`).join('')||'<p class="mu">Nenhuma lista ativa. Crie uma em Lista de compras.</p>'}<button class="btn" onclick="close()">FECHAR</button></div></div>`}
+function addToList(id){const L=S.lists.find(x=>x.id===id),p=S.products[PK[PI]],nm=p.name.trim().toLowerCase();
+ if(L.items.some(x=>(p.code&&x.code===p.code)||x.name.trim().toLowerCase()===nm)){close();return alert('Este produto já está na lista.')}
+ L.items.push(newIt({name:p.name,code:p.code||'',unit:p.unit||'un',qty:1,est:p.last!=null?p.last:null}));save();close();alert('Adicionado à lista "'+L.name+'". O preço estimado é o último pago (histórico).')}
+function openProdForm(k){const p=k?S.products[k]:{};PE=k;
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>${k?'Editar produto':'Novo produto'}</h2>
+ <label>Nome</label><input id="pn" value="${esc(p.name||'')}">
+ <label>Categoria</label><select id="pc"><option value="">Sem categoria</option>${S.cats.map(c=>`<option ${p.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
+ <label>Código de barras (opcional)</label><input id="pcode" inputmode="numeric" value="${esc(p.code||'')}" ${k?'readonly':''}>
+ <label>Unidade</label><select id="pu">${UN.map(u=>`<option ${(p.unit||'un')===u?'selected':''}>${u}</option>`).join('')}</select>
+ <label>Marca (opcional)</label><input id="pb" value="${esc(p.brand||'')}">
+ <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pf" style="width:auto" ${p.fav?'checked':''}> ⭐ Favorito</label>
+ <button class="btn ok" style="margin-top:14px" onclick="saveProd()">SALVAR</button><button class="btn sec" onclick="close()">CANCELAR</button></div></div>`}
+function saveProd(){const name=$('#pn').value.trim(),code=$('#pcode').value.trim();if(!name)return alert('Informe o nome.');
+ const d={name,cat:$('#pc').value,unit:$('#pu').value,brand:$('#pb').value.trim(),fav:$('#pf').checked};
+ if(PE)Object.assign(S.products[PE],d);
+ else{if(code&&S.products[code])return alert('Já existe um produto com este código.');
+  if(!code&&Object.values(S.products).some(x=>x.name.trim().toLowerCase()===name.toLowerCase()))return alert('Já existe um produto com este nome.');
+  S.products[code||'x'+Date.now()]={code,last:null,...d}}
+ save();close();render()}
+function openCats(){CE=-1;
+ $('#m').innerHTML=`<div class="modal"><div class="sheet"><h2>Categorias</h2>${S.cats.map((c,i)=>`<div class="item row"><span>${esc(c)} <span class="mu">(${Object.values(S.products).filter(p=>p.cat===c).length})</span></span><span><button class="btn sm sec" onclick="renCat(${i})">✏️</button> <button class="btn sm er" onclick="delCat(${i})">🗑</button></span></div>`).join('')}<label>Categoria</label><input id="nc" placeholder="Nome da categoria"><button class="btn ok" id="nb" style="margin-top:10px" onclick="saveCat()">ADICIONAR</button><button class="btn sec" onclick="close();render()">FECHAR</button></div></div>`}
+function renCat(i){CE=i;$('#nc').value=S.cats[i];$('#nb').textContent='SALVAR NOME'}
+function saveCat(){const n=$('#nc').value.trim();if(!n)return alert('Informe o nome.');
+ if(S.cats.some((c,i)=>i!==CE&&c.toLowerCase()===n.toLowerCase()))return alert('Essa categoria já existe.');
+ if(CE>=0){const o=S.cats[CE];S.cats[CE]=n;Object.values(S.products).forEach(p=>{if(p.cat===o)p.cat=n})}else S.cats.push(n);
+ save();openCats()}
+function delCat(i){const c=S.cats[i],n=Object.values(S.products).filter(p=>p.cat===c).length;
+ if(!confirm(n?n+' produto(s) ficarão sem categoria. Excluir "'+c+'"?':'Excluir "'+c+'"?'))return;
+ Object.values(S.products).forEach(p=>{if(p.cat===c)p.cat=''});S.cats.splice(i,1);save();openCats()}
+const NU={g:['kg',1000],ml:['L',1000]};let LE='p';
+const Rp=v=>v<1?v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:4}):R(v);
+function ed(w){if(w)LE=w;const q=num($('#iq').value);
+ if(LE==='t'){const t=num($('#it').value);if(isFinite(t)&&q>0)$('#ip').value=fq(+(t/q).toFixed(4))}
+ else{const p=num($('#ip').value);if(isFinite(p)&&q>0)$('#it').value=fq(+(p*q).toFixed(2))}
+ sub()}
+function applyTheme(){const t=S.cfg.theme,r=document.documentElement;if(t==='light'||t==='dark')r.setAttribute('data-theme',t);else r.removeAttribute('data-theme')}
+function setCfg(k,v){S.cfg[k]=v;save();applyTheme();render()}
+function cfgView(){const c=S.cfg,t=c.theme||'auto',o=ost(curM());
+ return `<button class="back" onclick="go('home')">← Voltar</button><h2>Configurações</h2>
+ <div class="card"><label style="margin-top:0">Seu nome</label><input value="${esc(c.name||'')}" placeholder="Como quer ser chamado" onchange="setCfg('name',this.value.trim())"><p class="mu">O app não tem login: o nome fica salvo apenas neste navegador.</p></div>
+ <div class="card"><h2>Tema</h2><div class="chips">${[['auto','Automático'],['light','Claro'],['dark','Escuro']].map(([k,l])=>`<button class="chip ${t===k?'on':''}" onclick="setCfg('theme','${k}')">${l}</button>`).join('')}</div></div>
+ <div class="card"><h2>Valores em reais</h2><div class="chips"><button class="chip ${!c.nosym?'on':''}" onclick="setCfg('nosym',false)">R$ 1.234,56</button><button class="chip ${c.nosym?'on':''}" onclick="setCfg('nosym',true)">1.234,56</button></div></div>
+ <div class="card"><h2>Orçamento mensal</h2><div class="mu">${o.b==null?'Nenhum orçamento definido para o mês atual.':'Mês atual: '+R(o.b)}</div><button class="btn sec" style="margin-top:10px" onclick="OM=curM();openBud()">${o.b==null?'DEFINIR':'ALTERAR'} ORÇAMENTO</button></div>
+ <div class="card"><h2>Exportar dados (CSV)</h2><p class="mu">Arquivos para planilhas (separador ponto e vírgula, datas dd/mm/aaaa, decimais com vírgula). Exportar não altera seus registros.</p>${[['compras','Histórico de compras'],['itens','Itens comprados'],['produtos','Produtos cadastrados'],['mercados','Supermercados'],['precos','Histórico de preços']].map(([k,l])=>`<button class="btn sec" onclick="exp('${k}')">${l}</button>`).join('')}<p class="mu" id="xm"></p></div>
+ <div class="card"><h2>Seus dados</h2><p class="mu">Os dados e as preferências ficam apenas neste navegador e aparelho. O app não faz backup automático nem restaura dados: use as exportações para guardar uma cópia.</p></div>`}
+const cs=v=>{let s=String(v==null?'':v);if(/^[=+\-@]/.test(s))s="'"+s;return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+const cn=v=>String(Math.round(v*1e6)/1e6).replace('.',',');
+const bc=c=>/^\d+$/.test(c||'')?{t:c}:(c||'');
+const cv=x=>typeof x==='number'?cn(x):(x&&typeof x==='object')?'"=""'+x.t+'"""':cs(x);
+const csv=(h,r)=>'\ufeff'+[h,...r].map(a=>a.map(cv).join(';')).join('\r\n');
+async function exp(k){const m=$('#xm'),F=S.fairs,fin=F.filter(f=>f.status==='finalizada'),sit=f=>f.status==='finalizada'?'Finalizada':'Em andamento';let n,h,r=[];
+ if(k==='compras'){n='historico-de-compras';h=['ID','Supermercado','Data','Hora início','Hora fim','Situação','Lançamentos','Total (R$)'];r=F.map(f=>[f.id,f.market,dt(f.date),f.time,f.end||'',sit(f),f.items.length,tot(f)])}
+ else if(k==='itens'){n='itens-comprados';h=['ID da feira','Supermercado','Data','Situação da feira','Código de barras','Produto','Quantidade','Unidade','Preço unitário (R$)','Subtotal (R$)'];F.forEach(f=>f.items.forEach(i=>r.push([f.id,f.market,dt(f.date),sit(f),bc(i.code),i.name,i.qty,i.unit||'un',i.price,i.price*i.qty])))}
+ else if(k==='produtos'){n='produtos';h=['Código de barras','Nome','Categoria','Marca','Unidade','Favorito','Último preço pago (R$)'];r=Object.values(S.products).map(p=>[bc(p.code),p.name,p.cat||'',p.brand||'',p.unit||'un',p.fav?'Sim':'Não',p.last==null?'':p.last])}
+ else if(k==='mercados'){n='supermercados';h=['Supermercado','Feiras finalizadas','Total gasto (R$)','Última compra'];r=S.supers.map(s=>{const l=fin.filter(f=>f.market===s);return[s,l.length,sum(l),l.length?dt(l.map(f=>f.date).sort().pop()):'']})}
+ else{n='historico-de-precos';h=['Data','Supermercado','Código de barras','Produto','Quantidade','Unidade','Preço unitário (R$)','Unidade base','Preço por unidade base (R$)'];[...fin].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).forEach(f=>f.items.forEach(i=>{const u=i.unit||'un',[ub,fc]=NU[u]||[u,1];r.push([dt(f.date),f.market,bc(i.code),i.name,i.qty,u,i.price,ub,i.price*fc])}))}
+ if(!r.length){m.textContent='Sem registros para exportar.';return}
+ const dl=window.claude&&claude.use?await claude.use('downloads'):null;
+ if(!dl){m.textContent='A exportação não está disponível neste ambiente.';return}
+ try{await dl.save({filename:n+'-'+iso(new Date())+'.csv',data:csv(h,r)});m.textContent='Arquivo gerado: '+n+'.csv'}catch(e){m.textContent=e&&e.code==='declined'?'Download cancelado.':'Não foi possível salvar o arquivo neste ambiente.'}}
+applyTheme();
+render();
+</script></body></html>
